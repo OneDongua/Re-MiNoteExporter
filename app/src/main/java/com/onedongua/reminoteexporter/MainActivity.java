@@ -111,11 +111,12 @@ public class MainActivity extends AppCompatActivity {
         new AlertDialog.Builder(this)
                 .setTitle("关于软件")
                 .setMessage("""
+                        作者：一個冬瓜
                         1. 本软件仅供学习交流使用，请在 24 小时内删除本应用，一切因使用本软件产生的后果与原作者无关
                         2. 本软件均使用小米官方云服务(i.mi.com)的 API 获取数据，不存在第三方 API 的使用
                         3. 请勿从除 酷安 和 Github Release 以外的渠道获取本软件
                         4. 本软件尊重您的隐私，仅需要最基础的网络权限即可正常使用
-                        5. 本软件永远不会也不能收集您的账号、密码、隐私信息等数据，可以自行查阅软件源代码验证
+                        5. 本软件永远不会也不能收集或修改您的账号、密码、隐私信息等数据，您可以自行查阅软件源代码验证
                         6. 本软件已开源，项目地址: https://github.com/OneDongua/Re-MiNoteExporter
                         7. 本软件使用了以下开源项目，在此鸣谢:
                         Material Components for Android: https://github.com/material-components/material-components-android
