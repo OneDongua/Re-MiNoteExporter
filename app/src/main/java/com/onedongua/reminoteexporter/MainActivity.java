@@ -115,8 +115,16 @@ public class MainActivity extends AppCompatActivity {
 
     private void checkNotes() {
         new File(exportDir).mkdirs();
+        noteUrls.clear(); // 清空上一次的记录
+        fetchNotes(null); // 从第一页开始获取
+    }
 
+    private void fetchNotes(String syncTag) {
         String url = "https://i.mi.com/note/full/page/?limit=200";
+        if (syncTag != null) {
+            url += "&syncTag=" + syncTag;
+        }
+
         Request request = new Request.Builder()
                 .url(url)
                 .addHeader("Cookie", cookie)
@@ -149,14 +157,31 @@ public class MainActivity extends AppCompatActivity {
         Gson gson = new Gson();
         NoteResponse noteResponse = gson.fromJson(json, NoteResponse.class);
         if (noteResponse.code == 0) {
-            for (NoteResponse.NoteEntry entry : noteResponse.data.entries) {
+            NoteResponse.Data data = noteResponse.data;
+            List<NoteResponse.NoteEntry> entries = data.entries;
+
+            // 如果没有更多数据，结束请求
+            if (entries.isEmpty()) {
+                runOnUiThread(() -> showToast("步骤1完成: 已加载所有笔记"));
+                fetchNoteDetails();
+                return;
+            }
+
+            // 保存笔记 ID 到列表中
+            for (NoteResponse.NoteEntry entry : entries) {
                 noteUrls.add("https://i.mi.com/note/note/" + entry.id);
             }
-            fetchNoteDetails();
+
+            // 获取新的 syncTag
+            String nextSyncTag = data.syncTag;
+
+            // 递归调用以请求下一页数据
+            fetchNotes(nextSyncTag);
         } else {
             runOnUiThread(() -> showToast("步骤1失败: 数据解析错误"));
         }
     }
+
 
     private void fetchNoteDetails() {
         for (int i = 0; i < noteUrls.size(); i++) {
@@ -235,6 +260,7 @@ public class MainActivity extends AppCompatActivity {
 
         static class Data {
             List<NoteEntry> entries;
+            String syncTag;
         }
 
         static class NoteEntry {
