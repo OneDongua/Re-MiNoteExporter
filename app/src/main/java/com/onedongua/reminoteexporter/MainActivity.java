@@ -1,6 +1,5 @@
 package com.onedongua.reminoteexporter;
 
-import android.annotation.SuppressLint;
 import android.os.Bundle;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
@@ -23,6 +22,8 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -31,7 +32,6 @@ import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 
-@SuppressLint("SetTextI18n")
 public class MainActivity extends AppCompatActivity {
     private enum OutMode {
         HTML, TXT
@@ -43,7 +43,8 @@ public class MainActivity extends AppCompatActivity {
     private final List<String> noteUrls = new ArrayList<>();
     private String exportDir = "/sdcard/小米便签导出器/";
     private WebView webView;
-
+    // 创建一个固定大小的线程池，例如最大并发数为 5
+    private final ExecutorService executorService = Executors.newFixedThreadPool(5);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,6 +71,9 @@ public class MainActivity extends AppCompatActivity {
 
         CookieManager cookieManager = CookieManager.getInstance();
         cookie = cookieManager.getCookie("https://i.mi.com/note/h5#/");
+
+        // 关闭线程池的生命周期管理
+        Runtime.getRuntime().addShutdownHook(new Thread(executorService::shutdown));
     }
 
     private void showToast(String message) {
@@ -182,40 +186,42 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-
     private void fetchNoteDetails() {
         for (int i = 0; i < noteUrls.size(); i++) {
             String url = noteUrls.get(i);
-            Request request = new Request.Builder()
-                    .url(url)
-                    .addHeader("Cookie", cookie)
-                    .build();
-
             final int index = i;
-            client.newCall(request).enqueue(new Callback() {
-                @Override
-                public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    runOnUiThread(() -> showToast("步骤2失败: 请求失败"));
-                }
 
-                @Override
-                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                    if (response.isSuccessful()) {
-                        ResponseBody responseBody = response.body();
-                        if (responseBody != null) {
-                            String content = responseBody.string();
-                            try {
-                                processNoteContent(content, index);
-                                runOnUiThread(() -> showToast("已导出至 " + exportDir));
-                            } catch (IOException e) {
-                                runOnUiThread(() -> showToast("文件保存失败"));
-                            }
-                        }
+            // 提交任务到线程池
+            executorService.submit(() -> {
+                Request request = new Request.Builder()
+                        .url(url)
+                        .addHeader("Cookie", cookie)
+                        .build();
 
-                    } else {
-                        runOnUiThread(() -> showToast("步骤2失败: 请求失败 (" + response.code() + ")"));
+                client.newCall(request).enqueue(new Callback() {
+                    @Override
+                    public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                        runOnUiThread(() -> showToast("步骤2失败: 请求失败"));
                     }
-                }
+
+                    @Override
+                    public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                        if (response.isSuccessful()) {
+                            ResponseBody responseBody = response.body();
+                            if (responseBody != null) {
+                                String content = responseBody.string();
+                                try {
+                                    processNoteContent(content, index);
+                                    runOnUiThread(() -> showToast("已导出至 " + exportDir));
+                                } catch (IOException e) {
+                                    runOnUiThread(() -> showToast("文件保存失败"));
+                                }
+                            }
+                        } else {
+                            runOnUiThread(() -> showToast("步骤2失败: 请求失败 (" + response.code() + ")"));
+                        }
+                    }
+                });
             });
         }
     }
