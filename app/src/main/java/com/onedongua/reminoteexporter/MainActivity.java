@@ -13,6 +13,7 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.RadioButton;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -102,6 +103,30 @@ public class MainActivity extends AppCompatActivity {
 
         // 关闭线程池的生命周期管理
         Runtime.getRuntime().addShutdownHook(new Thread(scheduledExecutorService::shutdown));
+
+        showInfoDialog();
+    }
+
+    private void showInfoDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("关于软件")
+                .setMessage("""
+                        1. 本软件仅供学习交流使用，请在 24 小时内删除本应用，一切因使用本软件产生的后果与原作者无关
+                        2. 本软件均使用小米官方云服务(i.mi.com)的 API 获取数据，不存在第三方 API 的使用
+                        3. 请勿从除 酷安 和 Github Release 以外的渠道获取本软件
+                        4. 本软件尊重您的隐私，仅需要最基础的网络权限即可正常使用
+                        5. 本软件永远不会也不能收集您的账号、密码、隐私信息等数据，可以自行查阅软件源代码验证
+                        6. 本软件已开源，项目地址: https://github.com/OneDongua/Re-MiNoteExporter
+                        7. 本软件使用了以下开源项目，在此鸣谢:
+                        Material Components for Android: https://github.com/material-components/material-components-android
+                         Licence: Apache 2.0
+                        Gson: https://github.com/google/gson
+                         Licence: Apache 2.0
+                        OkHttp: https://github.com/square/okhttp
+                         Licence: Apache 2.0
+                        """)
+                .setPositiveButton("确定", null)
+                .show();
     }
 
     public void openDirectory() {
@@ -146,6 +171,7 @@ public class MainActivity extends AppCompatActivity {
         RadioButton radioHtml = binding.radioHtml;
         RadioButton radioTxt = binding.radioTxt;
         CheckBox checkBox = binding.checkBox;
+        TextView textView = binding.textView;
 
         // 设置初始选中状态
         if (outMode == OutMode.HTML) {
@@ -154,6 +180,8 @@ public class MainActivity extends AppCompatActivity {
             radioTxt.setChecked(true);
         }
         checkBox.setChecked(downloadImages);
+
+        textView.setOnClickListener(v -> showInfoDialog());
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setView(dialogView)
@@ -167,7 +195,6 @@ public class MainActivity extends AppCompatActivity {
                     downloadImages = checkBox.isChecked();
                 })
                 .setNegativeButton("取消", (dialog, which) -> dialog.dismiss());
-
         AlertDialog dialog = builder.create();
         dialog.show();
     }
