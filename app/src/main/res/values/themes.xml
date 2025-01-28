@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.Re小米笔记导出器" parent="Theme.MaterialComponents.DayNight" />
+</resources>
