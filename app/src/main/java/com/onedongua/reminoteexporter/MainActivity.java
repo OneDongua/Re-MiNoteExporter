@@ -1,29 +1,44 @@
 package com.onedongua.reminoteexporter;
 
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
+import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.CheckBox;
-import android.widget.LinearLayout;
-import android.widget.PopupWindow;
+import android.widget.RadioButton;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.documentfile.provider.DocumentFile;
 
 import com.google.gson.Gson;
 import com.onedongua.reminoteexporter.databinding.ActivityMainBinding;
+import com.onedongua.reminoteexporter.databinding.DialogSettingsBinding;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -32,24 +47,37 @@ import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 
+@SuppressLint({"SetTextI18n", "SimpleDateFormat", "SetJavaScriptEnabled"})
 public class MainActivity extends AppCompatActivity {
+
     private enum OutMode {
         HTML, TXT
     }
 
+    private final int REQUEST_CODE_DIRECTORY = 1;
+    private final ScheduledExecutorService scheduledExecutorService = new ScheduledThreadPoolExecutor(5);
+    private Uri uri;
+    private DocumentFile folder;
+    private DocumentFile newFolder;
+    private DocumentFile imageFolder;
     private OkHttpClient client;
+    private CookieManager cookieManager;
     private String cookie;
     private OutMode outMode = OutMode.HTML;
+    private boolean downloadImages = false;
     private final List<String> noteUrls = new ArrayList<>();
-    private String exportDir = "/sdcard/小米便签导出器/";
+    private Button checkButton;
+    private Button selectButton;
     private WebView webView;
-    // 创建一个固定大小的线程池，例如最大并发数为 5
-    private final ExecutorService executorService = Executors.newFixedThreadPool(5);
+    private String folderName;
+    private final Map<Integer, Integer> handledImages = new ConcurrentHashMap<>();
+    private int completedRequests = 0;
+    private Toast currentToast;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        com.onedongua.reminoteexporter.databinding.ActivityMainBinding binding = ActivityMainBinding.inflate(getLayoutInflater());
+        ActivityMainBinding binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
         client = new OkHttpClient();
@@ -60,66 +88,121 @@ public class MainActivity extends AppCompatActivity {
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient());
         webView.loadUrl("https://i.mi.com/note/h5#/");
+        cookieManager = CookieManager.getInstance();
 
         Button refreshButton = binding.refresh;
-        Button checkButton = binding.check;
+        checkButton = binding.check;
         Button settingButton = binding.setting;
+        selectButton = binding.select;
 
         refreshButton.setOnClickListener(v -> refreshWebView());
         settingButton.setOnClickListener(v -> showSettingsPopup());
         checkButton.setOnClickListener(v -> checkNotes());
-
-        CookieManager cookieManager = CookieManager.getInstance();
-        cookie = cookieManager.getCookie("https://i.mi.com/note/h5#/");
+        selectButton.setOnClickListener(v -> openDirectory());
 
         // 关闭线程池的生命周期管理
-        Runtime.getRuntime().addShutdownHook(new Thread(executorService::shutdown));
+        Runtime.getRuntime().addShutdownHook(new Thread(scheduledExecutorService::shutdown));
+    }
+
+    public void openDirectory() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        startActivityForResult(intent, REQUEST_CODE_DIRECTORY);
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent resultData) {
+        super.onActivityResult(requestCode, resultCode, resultData);
+        if (requestCode == REQUEST_CODE_DIRECTORY
+                && resultCode == Activity.RESULT_OK) {
+            if (resultData != null) {
+                uri = resultData.getData();
+                if (uri != null) {
+                    showToast("你已选择: " + uri.getPath());
+                    selectButton.setText("重新选择");
+                } else {
+                    showToast("选择失败");
+                }
+            }
+        }
     }
 
     private void showToast(String message) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+        if (currentToast != null) {
+            currentToast.cancel();
+        }
+        currentToast = Toast.makeText(this, message, Toast.LENGTH_SHORT);
+        currentToast.show();
     }
 
     private void refreshWebView() {
         webView.reload();
+        cookie = cookieManager.getCookie("https://i.mi.com/note/h5#/");
     }
 
     private void showSettingsPopup() {
-        LinearLayout settingLayout = new LinearLayout(this);
-        settingLayout.setOrientation(LinearLayout.VERTICAL);
+        DialogSettingsBinding binding = DialogSettingsBinding.inflate(getLayoutInflater());
+        View dialogView = binding.getRoot();
 
-        CheckBox cbHtml = new CheckBox(this);
-        cbHtml.setText("导出为 HTML");
-        cbHtml.setChecked(true);
+        RadioButton radioHtml = binding.radioHtml;
+        RadioButton radioTxt = binding.radioTxt;
+        CheckBox checkBox = binding.checkBox;
 
-        CheckBox cbTxt = new CheckBox(this);
-        cbTxt.setText("导出为 TXT");
+        // 设置初始选中状态
+        if (outMode == OutMode.HTML) {
+            radioHtml.setChecked(true);
+        } else if (outMode == OutMode.TXT) {
+            radioTxt.setChecked(true);
+        }
+        checkBox.setChecked(downloadImages);
 
-        settingLayout.addView(cbHtml);
-        settingLayout.addView(cbTxt);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setView(dialogView)
+                .setTitle("设置")
+                .setPositiveButton("确定", (dialog, which) -> {
+                    if (radioHtml.isChecked()) {
+                        outMode = OutMode.HTML;
+                    } else if (radioTxt.isChecked()) {
+                        outMode = OutMode.TXT;
+                    }
+                    downloadImages = checkBox.isChecked();
+                })
+                .setNegativeButton("取消", (dialog, which) -> dialog.dismiss());
 
-        PopupWindow popup = new PopupWindow(settingLayout, LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        popup.setFocusable(true);
-        popup.showAtLocation(findViewById(android.R.id.content), 0, 0, 0);
-
-        cbHtml.setOnClickListener(v -> {
-            if (cbHtml.isChecked()) {
-                cbTxt.setChecked(false);
-                outMode = OutMode.HTML;
-            }
-        });
-
-        cbTxt.setOnClickListener(v -> {
-            if (cbTxt.isChecked()) {
-                cbHtml.setChecked(false);
-                outMode = OutMode.TXT;
-            }
-        });
+        AlertDialog dialog = builder.create();
+        dialog.show();
     }
 
     private void checkNotes() {
-        new File(exportDir).mkdirs();
+        if (uri == null) {
+            showToast("请先选择导出目录");
+            return;
+        }
+        showToast("开始获取…");
+        checkButton.setEnabled(false);
+
+        cookie = cookieManager.getCookie("https://i.mi.com/note/h5#/");
         noteUrls.clear(); // 清空上一次的记录
+
+        folder = DocumentFile.fromTreeUri(this, uri);
+        if (folder == null || !folder.canWrite()) {
+            showToast("导出目录初始化失败");
+            return;
+        }
+
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss");
+        folderName = sdf.format(new Date());
+        newFolder = folder.findFile(folderName);
+        if (newFolder == null)
+            newFolder = folder.createDirectory(folderName);
+        if (downloadImages) {
+            if (newFolder != null) {
+                imageFolder = newFolder.createDirectory("图片");
+            } else {
+                showToast("导出目录初始化失败");
+                return;
+            }
+        }
+
         fetchNotes(null); // 从第一页开始获取
     }
 
@@ -166,7 +249,7 @@ public class MainActivity extends AppCompatActivity {
 
             // 如果没有更多数据，结束请求
             if (entries.isEmpty()) {
-                runOnUiThread(() -> showToast("步骤1完成: 已加载所有笔记"));
+                runOnUiThread(() -> showToast("步骤1完成: 已读取到共" + noteUrls.size() + "条笔记列表"));
                 fetchNoteDetails();
                 return;
             }
@@ -187,12 +270,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void fetchNoteDetails() {
+        completedRequests = 0; // 重置计数器
         for (int i = 0; i < noteUrls.size(); i++) {
             String url = noteUrls.get(i);
             final int index = i;
 
             // 提交任务到线程池
-            executorService.submit(() -> {
+            scheduledExecutorService.schedule(() -> {
                 Request request = new Request.Builder()
                         .url(url)
                         .addHeader("Cookie", cookie)
@@ -202,6 +286,7 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
                         runOnUiThread(() -> showToast("步骤2失败: 请求失败"));
+                        increaseCompletedRequests(); // 计数
                     }
 
                     @Override
@@ -210,28 +295,146 @@ public class MainActivity extends AppCompatActivity {
                             ResponseBody responseBody = response.body();
                             if (responseBody != null) {
                                 String content = responseBody.string();
-                                try {
-                                    processNoteContent(content, index);
-                                    runOnUiThread(() -> showToast("已导出至 " + exportDir));
-                                } catch (IOException e) {
-                                    runOnUiThread(() -> showToast("文件保存失败"));
-                                }
+                                fetchImages(content, index);
                             }
                         } else {
                             runOnUiThread(() -> showToast("步骤2失败: 请求失败 (" + response.code() + ")"));
                         }
+                        increaseCompletedRequests(); // 计数
                     }
+
                 });
-            });
+            }, 500, TimeUnit.MILLISECONDS);
         }
     }
 
-    private void processNoteContent(String content, int index) throws IOException {
+    private void fetchImages(String content, int index) {
         Gson gson = new Gson();
         NoteDetail noteDetail = gson.fromJson(content, NoteDetail.class);
 
         String note = noteDetail.data.entry.content;
-        note = note.replaceAll("☺ (.*?)\\n", "<img src=\"https://i.mi.com/file/full?type=note_img&fileid=$1\">");
+
+        if (outMode == OutMode.TXT && !downloadImages) {
+            processNoteContent(note, index, noteDetail, null);
+        } else {
+            Pattern pattern = Pattern.compile("☺ (.*?)<0/></>");
+            Matcher matcher = pattern.matcher(note);
+
+            Map<String, String> imageUrls = new HashMap<>();
+
+            while (matcher.find()) {
+                imageUrls.put(matcher.group(1), null);
+                handledImages.merge(index, 1, Integer::sum);
+            }
+
+            if (!imageUrls.isEmpty()) {
+                for (String fileId : imageUrls.keySet()) {
+                    Request request = new Request.Builder()
+                            .url("https://i.mi.com/file/full?type=note_img&fileid=" + fileId)
+                            .addHeader("Cookie", cookie)
+                            .build();
+
+                    new OkHttpClient.Builder().followRedirects(false).build()
+                            .newCall(request).enqueue(new Callback() {
+                                @Override
+                                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                                    runOnUiThread(() -> showToast("步骤2失败: 请求图片失败"));
+                                    processNoteContent(note, index, noteDetail, imageUrls);
+                                }
+
+                                @Override
+                                public void onResponse(@NonNull Call call, @NonNull Response response) {
+                                    if (response.isRedirect()) {
+                                        String location = response.header("Location");
+                                        if (location != null) {
+                                            imageUrls.put(fileId, location);
+                                        } else {
+                                            runOnUiThread(() -> showToast("步骤2失败: 请求图片真实地址失败"));
+                                        }
+                                    } else {
+                                        runOnUiThread(() -> showToast("步骤2失败: 请求图片失败 (" + response.code() + ")"));
+                                    }
+                                    processNoteContent(note, index, noteDetail, imageUrls);
+                                }
+                            });
+                }
+            } else {
+                processNoteContent(note, index, noteDetail, null);
+            }
+        }
+
+    }
+
+    private synchronized void processNoteContent(String note, int index, NoteDetail noteDetail, Map<String, String> imageUrls) {
+        handledImages.merge(index, -1, Integer::sum);
+        if (imageUrls != null && handledImages.get(index) != 0) return;
+
+        if (imageUrls != null) {
+            if (outMode == OutMode.HTML) {
+                for (String fileId : imageUrls.keySet()) {
+                    String url = imageUrls.get(fileId);
+                    if (url == null) continue;
+
+                    note = note.replaceAll("☺ " + fileId + "<0/></>",
+                            "<img src=\"" + url + "\">");
+                }
+            } else if (outMode == OutMode.TXT) {
+                note = note.replaceAll("☺ .*?<0/></>",
+                        "[图片]");
+            }
+
+            if (downloadImages) {
+                for (String fileId : imageUrls.keySet()) {
+                    String url = imageUrls.get(fileId);
+                    if (url == null) continue;
+
+                    scheduledExecutorService.schedule(() -> {
+                        Request request = new Request.Builder()
+                                .url(url)
+                                .addHeader("Cookie", cookie)
+                                .build();
+
+                        client.newCall(request).enqueue(new Callback() {
+                            @Override
+                            public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                                runOnUiThread(() -> showToast("图片获取失败"));
+                            }
+
+                            @Override
+                            public void onResponse(@NonNull Call call, @NonNull Response response) {
+                                ResponseBody body = response.body();
+                                if (body != null) {
+                                    String contentType = response.header("Content-Type");
+                                    DocumentFile imageFile = imageFolder.createFile(
+                                            contentType != null ? contentType : "image/jpeg",
+                                            fileId);
+                                    if (imageFile != null) {
+                                        try (InputStream inputStream = body.byteStream();
+                                             OutputStream outputStream = getContentResolver().openOutputStream(imageFile.getUri())) {
+                                            if (outputStream != null) {
+                                                byte[] buffer = new byte[8192];
+                                                int bytesRead;
+
+                                                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                                                    outputStream.write(buffer, 0, bytesRead);
+                                                }
+
+                                                outputStream.flush();
+                                                runOnUiThread(() -> showToast("图片下载成功"));
+                                            }
+                                        } catch (IOException e) {
+                                            runOnUiThread(() -> showToast("图片保存失败"));
+                                        }
+                                    } else {
+                                        runOnUiThread(() -> showToast("图片文件创建失败"));
+                                    }
+                                }
+                            }
+                        });
+                    }, 500, TimeUnit.MILLISECONDS);
+                }
+            }
+        }
 
         String fileExt;
 
@@ -249,14 +452,40 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        String title = noteDetail.data.entry.extraInfo.title;
+        Gson gson = new Gson();
+        String title = gson.fromJson(noteDetail.data.entry.extraInfo, ExtraInfo.class).title;
         if (title == null || title.isEmpty()) {
             title = "无标题";
         }
 
-        File file = new File(exportDir, index + "." + title + fileExt);
-        try (FileWriter writer = new FileWriter(file)) {
-            writer.write(note);
+        try {
+            if (newFolder != null) {
+                String name = index + "." + title + fileExt;
+                DocumentFile newFile = newFolder.createFile("*/*", name);
+                if (newFile != null) {
+                    try (OutputStream outputStream = getContentResolver().openOutputStream(newFile.getUri())) {
+                        if (outputStream != null) {
+                            outputStream.write(note.getBytes());
+                            outputStream.flush();
+                            runOnUiThread(() -> showToast("已导出: " + name));
+                        }
+                    } catch (IOException e) {
+                        runOnUiThread(() -> showToast("文件写入失败"));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            runOnUiThread(() -> showToast("文件创建失败"));
+        }
+    }
+
+    private synchronized void increaseCompletedRequests() {
+        completedRequests++;
+        if (completedRequests == noteUrls.size()) {
+            runOnUiThread(() -> {
+                showToast("所有笔记已导出");
+                checkButton.setEnabled(true);
+            });
         }
     }
 
@@ -282,12 +511,13 @@ public class MainActivity extends AppCompatActivity {
 
             static class Entry {
                 String content;
-                ExtraInfo extraInfo;
+                String extraInfo;
             }
 
-            static class ExtraInfo {
-                String title;
-            }
         }
+    }
+
+    private static class ExtraInfo {
+        String title;
     }
 }
