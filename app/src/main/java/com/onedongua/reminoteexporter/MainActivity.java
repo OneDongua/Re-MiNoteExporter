@@ -5,8 +5,10 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.MimeTypeMap;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -31,6 +33,7 @@ import com.onedongua.reminoteexporter.model.NoteDetail;
 import com.onedongua.reminoteexporter.model.NoteEntry;
 import com.onedongua.reminoteexporter.model.NoteFolder;
 import com.onedongua.reminoteexporter.model.NoteResponse;
+import com.onedongua.reminoteexporter.model.NoteSettingItem;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -57,6 +60,7 @@ import okhttp3.ResponseBody;
 
 @SuppressLint({"SetTextI18n", "SimpleDateFormat", "SetJavaScriptEnabled"})
 public class MainActivity extends AppCompatActivity {
+    private static final String TAG = "MainActivity";
 
     private enum OutMode {
         XML, TXT, JSON, MD
@@ -74,6 +78,7 @@ public class MainActivity extends AppCompatActivity {
     private OutMode outMode = OutMode.MD;
     private boolean downloadImages = false;
     private boolean useFolders = true;
+    private boolean useMdMetadata = false;
     private final List<String> noteUrls = new ArrayList<>();
     private final Map<String, String> folderNames = new HashMap<>();
     private final Map<String, DocumentFile> folderDirs = new HashMap<>();
@@ -250,6 +255,7 @@ public class MainActivity extends AppCompatActivity {
         RadioButton radioMd = binding.radioMd;
         CheckBox checkBox = binding.checkBox;
         CheckBox checkFolder = binding.checkFolder;
+        CheckBox checkMdMetadata = binding.checkMdMetadata;
         TextView textView = binding.textView;
 
         // 设置初始选中状态
@@ -261,9 +267,19 @@ public class MainActivity extends AppCompatActivity {
             radioJson.setChecked(true);
         } else if (outMode == OutMode.MD) {
             radioMd.setChecked(true);
+            checkMdMetadata.setVisibility(View.VISIBLE);
         }
         checkBox.setChecked(downloadImages);
         checkFolder.setChecked(useFolders);
+        checkMdMetadata.setChecked(useMdMetadata);
+
+        binding.radioGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            if (checkedId == R.id.radioMd) {
+                checkMdMetadata.setVisibility(View.VISIBLE);
+            } else {
+                checkMdMetadata.setVisibility(View.GONE);
+            }
+        });
 
         textView.setOnClickListener(v -> showInfoDialog());
 
@@ -282,6 +298,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                     downloadImages = checkBox.isChecked();
                     useFolders = checkFolder.isChecked();
+                    useMdMetadata = checkMdMetadata.isChecked();
                 })
                 .setNegativeButton(R.string.cancel, (dialog, which) -> dialog.dismiss());
         AlertDialog dialog = builder.create();
@@ -289,7 +306,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void check() {
-        if (uri == null) {
+        if (uri == null || uri.getPath() == null) {
             showToast("请先选择导出目录");
             return;
         }
@@ -304,9 +321,11 @@ public class MainActivity extends AppCompatActivity {
         }
 
         String settingsSummary =
+                "导出目录: " + uri.getPath().replace("/tree/primary:", "") + "\n" +
                 "导出模式: " + modeStr + "\n" +
                 "下载图片: " + (downloadImages ? getString(R.string.yes) : getString(R.string.no)) + "\n" +
-                "按文件夹分类: " + (useFolders ? getString(R.string.yes) : getString(R.string.no)) + "\n\n" +
+                "按文件夹分类: " + (useFolders ? getString(R.string.yes) : getString(R.string.no)) + "\n" +
+                (outMode == OutMode.MD ? "Markdown 元数据: " + (useMdMetadata ? getString(R.string.yes) : getString(R.string.no)) + "\n" : "") + "\n" +
                 "点击确定则会开始导出";
 
         new AlertDialog.Builder(this)
@@ -508,7 +527,7 @@ public class MainActivity extends AppCompatActivity {
 
         if ((outMode == OutMode.TXT || outMode == OutMode.JSON) && !downloadImages) {
             // 无需替换图片文本且无需下载图片
-            finalStep(note, index, noteDetail, null);
+            finalStep(index, noteDetail, null);
         } else {
             Pattern pattern = Pattern.compile("☺ (.*?)<0/></>");
             Matcher matcher = pattern.matcher(note);
@@ -539,7 +558,7 @@ public class MainActivity extends AppCompatActivity {
                                 @Override
                                 public void onFailure(@NonNull Call call, @NonNull IOException e) {
                                     runOnUiThread(() -> showToast("步骤2失败: 请求图片失败"));
-                                    finalStep(note, index, noteDetail, imageUrls);
+                                    finalStep(index, noteDetail, imageUrls);
                                 }
 
                                 @Override
@@ -554,12 +573,12 @@ public class MainActivity extends AppCompatActivity {
                                     } else {
                                         runOnUiThread(() -> showToast("步骤2失败: 请求图片失败 (" + response.code() + ")"));
                                     }
-                                    finalStep(note, index, noteDetail, imageUrls);
+                                    finalStep(index, noteDetail, imageUrls);
                                 }
                             });
                 }
             } else {
-                finalStep(note, index, noteDetail, null);
+                finalStep(index, noteDetail, null);
             }
         }
 
@@ -568,9 +587,11 @@ public class MainActivity extends AppCompatActivity {
     /**
      * 处理笔记文本、下载图片、保存文件
      */
-    private synchronized void finalStep(String note, int index, NoteDetail noteDetail, Map<String, String> imageUrls) {
+    private synchronized void finalStep(int index, NoteDetail noteDetail, Map<String, String> imageUrls) {
         handledImages.merge(index, -1, Integer::sum);
         if (imageUrls != null && handledImages.get(index) != 0) return;
+
+        String note = noteDetail.data.entry.content;
 
         Gson gson = new Gson();
         String title = gson.fromJson(noteDetail.data.entry.extraInfo, ExtraInfo.class).title;
@@ -591,17 +612,26 @@ public class MainActivity extends AppCompatActivity {
 
         if (imageUrls != null) {
             if (outMode == OutMode.XML || outMode == OutMode.MD) {
+                Map<String, String> mimeMap = new HashMap<>();
+                for (NoteSettingItem settingItem : noteDetail.data.entry.setting.data) {
+                    mimeMap.put(settingItem.fileId, settingItem.mimeType);
+                }
+
                 for (String fileId : imageUrls.keySet()) {
                     String url = imageUrls.get(fileId);
                     if (url == null) continue;
 
+                    String replacement;
                     if (outMode == OutMode.XML) {
-                        note = note.replaceAll("☺ " + fileId + "<0/></>",
-                                "<img src=\"" + url + "\">");
-                    } else {
-                        note = note.replaceAll("☺ " + fileId + "<0/></>",
-                                "![图片](" + url + ")");
+                        replacement = "<img src=\"" + url + "\">";
+                    } else { // OutMode.MD
+                        String ext = MimeTypeMap.getSingleton()
+                                .getExtensionFromMimeType(mimeMap.get(fileId));
+                        String suffix = ext == null ? "" : "." + ext;
+                        replacement = downloadImages ? "![图片](图片/" + fileId + suffix + ")" : "![图片](" + url + ")";
                     }
+
+                    note = note.replaceAll("☺ " + fileId + "<0/></>", replacement);
                 }
             } else if (outMode == OutMode.TXT) {
                 note = note.replaceAll("☺ .*?<0/></>",
@@ -657,6 +687,7 @@ public class MainActivity extends AppCompatActivity {
                                         } catch (IOException e) {
                                             runOnUiThread(() -> showToast("图片保存失败"));
                                             updateLog("图片保存失败: " + fileId);
+                                            Log.e(TAG, "finalStep: ", e);
                                         }
                                     } else {
                                         runOnUiThread(() -> showToast("图片文件创建失败"));
@@ -690,6 +721,17 @@ public class MainActivity extends AppCompatActivity {
         } else if (outMode == OutMode.MD) {
             fileExt = ".md";
             note = XmlToMarkdown.convert(note);
+            if (useMdMetadata) {
+                SimpleDateFormat isoSdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+                String created = isoSdf.format(new Date(noteDetail.data.entry.createDate));
+                String modified = isoSdf.format(new Date(noteDetail.data.entry.modifyDate));
+                String metadata = "---\n" +
+                        "title: \"" + title.replace("\"", "\\\"") + "\"\n" +
+                        "created: " + created + "\n" +
+                        "modified: " + modified + "\n" +
+                        "---\n\n";
+                note = metadata + note;
+            }
         } else {
             runOnUiThread(() -> showToast("步骤2失败: 未知输出模式"));
             return;
@@ -711,11 +753,13 @@ public class MainActivity extends AppCompatActivity {
                         }
                     } catch (IOException e) {
                         runOnUiThread(() -> showToast("文件写入失败"));
+                        Log.e(TAG, "finalStep: ", e);
                     }
                 }
             }
         } catch (Exception e) {
             runOnUiThread(() -> showToast("文件创建失败"));
+            Log.e(TAG, "finalStep: ", e);
         }
     }
 

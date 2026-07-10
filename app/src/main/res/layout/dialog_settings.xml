@@ -65,6 +65,13 @@
         android:layout_height="wrap_content"
         android:text="@string/use_folders" />
 
+    <CheckBox
+        android:id="@+id/checkMdMetadata"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/md_metadata"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/textView"
         android:layout_width="match_parent"

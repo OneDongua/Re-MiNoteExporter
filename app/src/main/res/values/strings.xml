@@ -7,6 +7,7 @@
     <string name="export_md">导出为 Markdown</string>
     <string name="download_images">下载笔记中的图片</string>
     <string name="use_folders">按文件夹分类</string>
+    <string name="md_metadata">添加 Markdown 元数据(含创建与修改时间)</string>
     <string name="about_app">关于软件</string>
     <string name="confirm_settings_title">确认设置</string>
     <string name="confirm_settings_message">这是您想要的设置吗？\n\n%1$s</string>
