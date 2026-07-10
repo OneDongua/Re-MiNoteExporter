@@ -10,6 +10,7 @@ public class NoteResponse {
 
     public static class Data {
         public List<NoteEntry> entries;
+        public List<NoteFolder> folders;
         public String syncTag;
     }
 }
