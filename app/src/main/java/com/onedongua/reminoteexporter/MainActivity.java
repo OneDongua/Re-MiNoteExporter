@@ -110,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
         checkButton.setOnClickListener(v -> checkNotes());
         selectButton.setOnClickListener(v -> openDirectory());
 
-        // 关闭线程池的生命周期管理
+        // 线程池的生命周期管理
         Runtime.getRuntime().addShutdownHook(new Thread(scheduledExecutorService::shutdown));
 
         showInfoDialog();
