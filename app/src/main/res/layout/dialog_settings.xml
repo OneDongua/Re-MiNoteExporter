@@ -17,13 +17,19 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:checked="true"
-            android:text="@string/export_html" />
+            android:text="@string/export_xml" />
 
         <RadioButton
             android:id="@+id/radioTxt"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/export_txt" />
+
+        <RadioButton
+            android:id="@+id/radioJson"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/export_json" />
     </RadioGroup>
 
     <CheckBox

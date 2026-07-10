@@ -59,7 +59,7 @@ import okhttp3.ResponseBody;
 public class MainActivity extends AppCompatActivity {
 
     private enum OutMode {
-        HTML, TXT
+        XML, TXT, JSON
     }
 
     private final int REQUEST_CODE_DIRECTORY = 1;
@@ -71,7 +71,7 @@ public class MainActivity extends AppCompatActivity {
     private OkHttpClient client;
     private CookieManager cookieManager;
     private String cookie;
-    private OutMode outMode = OutMode.HTML;
+    private OutMode outMode = OutMode.XML;
     private boolean downloadImages = false;
     private boolean useFolders = true;
     private final List<String> noteUrls = new ArrayList<>();
@@ -244,15 +244,18 @@ public class MainActivity extends AppCompatActivity {
 
         RadioButton radioHtml = binding.radioHtml;
         RadioButton radioTxt = binding.radioTxt;
+        RadioButton radioJson = binding.radioJson;
         CheckBox checkBox = binding.checkBox;
         CheckBox checkFolder = binding.checkFolder;
         TextView textView = binding.textView;
 
         // 设置初始选中状态
-        if (outMode == OutMode.HTML) {
+        if (outMode == OutMode.XML) {
             radioHtml.setChecked(true);
         } else if (outMode == OutMode.TXT) {
             radioTxt.setChecked(true);
+        } else if (outMode == OutMode.JSON) {
+            radioJson.setChecked(true);
         }
         checkBox.setChecked(downloadImages);
         checkFolder.setChecked(useFolders);
@@ -264,9 +267,11 @@ public class MainActivity extends AppCompatActivity {
                 .setTitle(R.string.settings)
                 .setPositiveButton(R.string.ok, (dialog, which) -> {
                     if (radioHtml.isChecked()) {
-                        outMode = OutMode.HTML;
+                        outMode = OutMode.XML;
                     } else if (radioTxt.isChecked()) {
                         outMode = OutMode.TXT;
+                    } else if (radioJson.isChecked()) {
+                        outMode = OutMode.JSON;
                     }
                     downloadImages = checkBox.isChecked();
                     useFolders = checkFolder.isChecked();
@@ -282,8 +287,16 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        String modeStr;
+        switch (outMode) {
+            case XML -> modeStr = getString(R.string.export_xml);
+            case TXT -> modeStr = getString(R.string.export_txt);
+            case JSON -> modeStr = getString(R.string.export_json);
+            default -> modeStr = "未知";
+        }
+
         String settingsSummary =
-                "导出模式: " + (outMode == OutMode.HTML ? getString(R.string.export_html) : getString(R.string.export_txt)) + "\n" +
+                "导出模式: " + modeStr + "\n" +
                 "下载图片: " + (downloadImages ? getString(R.string.yes) : getString(R.string.no)) + "\n" +
                 "按文件夹分类: " + (useFolders ? getString(R.string.yes) : getString(R.string.no)) + "\n\n" +
                 "点击确定则会开始导出";
@@ -485,7 +498,8 @@ public class MainActivity extends AppCompatActivity {
 
         String note = noteDetail.data.entry.content;
 
-        if (outMode == OutMode.TXT && !downloadImages) {
+        if ((outMode == OutMode.TXT || outMode == OutMode.JSON) && !downloadImages) {
+            // 无需替换图片文本且无需下载图片
             finalStep(note, index, noteDetail, null);
         } else {
             Pattern pattern = Pattern.compile("☺ (.*?)<0/></>");
@@ -568,7 +582,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (imageUrls != null) {
-            if (outMode == OutMode.HTML) {
+            if (outMode == OutMode.XML) {
                 for (String fileId : imageUrls.keySet()) {
                     String url = imageUrls.get(fileId);
                     if (url == null) continue;
@@ -648,8 +662,8 @@ public class MainActivity extends AppCompatActivity {
 
         String fileExt;
 
-        if (outMode == OutMode.HTML) {
-            fileExt = ".html";
+        if (outMode == OutMode.XML) {
+            fileExt = ".xml";
             note = note.replace("\n", "<br>");
         } else if (outMode == OutMode.TXT) {
             fileExt = ".txt";
@@ -657,6 +671,9 @@ public class MainActivity extends AppCompatActivity {
             note = note.replace("&amp;", "&")
                     .replace("&lt;", "<")
                     .replace("&gt;", ">");
+        } else if (outMode == OutMode.JSON) {
+            fileExt = ".json";
+            note = gson.toJson(noteDetail.data.entry);
         } else {
             runOnUiThread(() -> showToast("步骤2失败: 未知输出模式"));
             return;
