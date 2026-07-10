@@ -34,6 +34,12 @@
         android:layout_height="wrap_content"
         android:text="下载笔记中的图片" />
 
+    <CheckBox
+        android:id="@+id/checkFolder"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="按文件夹分类" />
+
     <TextView
         android:id="@+id/textView"
         android:layout_width="match_parent"

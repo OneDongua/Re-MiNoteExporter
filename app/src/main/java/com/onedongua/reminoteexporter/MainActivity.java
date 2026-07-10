@@ -27,6 +27,7 @@ import com.onedongua.reminoteexporter.databinding.DialogSettingsBinding;
 import com.onedongua.reminoteexporter.model.ExtraInfo;
 import com.onedongua.reminoteexporter.model.NoteDetail;
 import com.onedongua.reminoteexporter.model.NoteEntry;
+import com.onedongua.reminoteexporter.model.NoteFolder;
 import com.onedongua.reminoteexporter.model.NoteResponse;
 
 import java.io.IOException;
@@ -70,7 +71,11 @@ public class MainActivity extends AppCompatActivity {
     private String cookie;
     private OutMode outMode = OutMode.HTML;
     private boolean downloadImages = false;
+    private boolean useFolders = true;
     private final List<String> noteUrls = new ArrayList<>();
+    private final Map<String, String> folderNames = new HashMap<>();
+    private final Map<String, DocumentFile> folderDirs = new HashMap<>();
+    private final Map<String, DocumentFile> folderImageDirs = new HashMap<>();
     private Button checkButton;
     private Button selectButton;
     private WebView webView;
@@ -176,6 +181,7 @@ public class MainActivity extends AppCompatActivity {
         RadioButton radioHtml = binding.radioHtml;
         RadioButton radioTxt = binding.radioTxt;
         CheckBox checkBox = binding.checkBox;
+        CheckBox checkFolder = binding.checkFolder;
         TextView textView = binding.textView;
 
         // 设置初始选中状态
@@ -185,6 +191,7 @@ public class MainActivity extends AppCompatActivity {
             radioTxt.setChecked(true);
         }
         checkBox.setChecked(downloadImages);
+        checkFolder.setChecked(useFolders);
 
         textView.setOnClickListener(v -> showInfoDialog());
 
@@ -198,6 +205,7 @@ public class MainActivity extends AppCompatActivity {
                         outMode = OutMode.TXT;
                     }
                     downloadImages = checkBox.isChecked();
+                    useFolders = checkFolder.isChecked();
                 })
                 .setNegativeButton("取消", (dialog, which) -> dialog.dismiss());
         AlertDialog dialog = builder.create();
@@ -214,6 +222,9 @@ public class MainActivity extends AppCompatActivity {
 
         cookie = cookieManager.getCookie("https://i.mi.com/note/h5#/");
         noteUrls.clear(); // 清空上一次的记录
+        folderNames.clear();
+        folderDirs.clear();
+        folderImageDirs.clear();
 
         folder = DocumentFile.fromTreeUri(this, uri);
         if (folder == null || !folder.canWrite()) {
@@ -279,9 +290,20 @@ public class MainActivity extends AppCompatActivity {
             NoteResponse.Data data = noteResponse.data;
             List<NoteEntry> entries = data.entries;
 
+            if (data.folders != null) {
+                for (NoteFolder f : data.folders) {
+                    folderNames.put(f.id, f.subject);
+                }
+            }
+
             // 如果没有更多数据，结束请求
             if (entries.isEmpty()) {
-                runOnUiThread(() -> showToast("步骤1完成: 已读取到共" + noteUrls.size() + "条笔记列表"));
+                runOnUiThread(() -> {
+                    showToast("步骤1完成: 已读取到共" + noteUrls.size() + "条笔记列表");
+                    if (useFolders) {
+                        createCategoryFolders();
+                    }
+                });
                 fetchNoteDetails();
                 return;
             }
@@ -298,6 +320,26 @@ public class MainActivity extends AppCompatActivity {
             fetchNotes(nextSyncTag);
         } else {
             runOnUiThread(() -> showToast("步骤1失败: 数据解析错误"));
+        }
+    }
+
+    private void createCategoryFolders() {
+        if (newFolder == null) return;
+        for (Map.Entry<String, String> entry : folderNames.entrySet()) {
+            String name = entry.getValue();
+            if (name == null || name.isEmpty()) name = "未命名文件夹";
+            // 过滤文件名非法字符
+            name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
+            DocumentFile targetFolder = newFolder.createDirectory(name);
+            if (targetFolder != null) {
+                folderDirs.put(entry.getKey(), targetFolder);
+                if (downloadImages) {
+                    DocumentFile imgFolder = targetFolder.createDirectory("图片");
+                    if (imgFolder != null) {
+                        folderImageDirs.put(entry.getKey(), imgFolder);
+                    }
+                }
+            }
         }
     }
 
@@ -347,7 +389,7 @@ public class MainActivity extends AppCompatActivity {
         String note = noteDetail.data.entry.content;
 
         if (outMode == OutMode.TXT && !downloadImages) {
-            processNoteContent(note, index, noteDetail, null);
+            finalStep(note, index, noteDetail, null);
         } else {
             Pattern pattern = Pattern.compile("☺ (.*?)<0/></>");
             Matcher matcher = pattern.matcher(note);
@@ -371,7 +413,7 @@ public class MainActivity extends AppCompatActivity {
                                 @Override
                                 public void onFailure(@NonNull Call call, @NonNull IOException e) {
                                     runOnUiThread(() -> showToast("步骤2失败: 请求图片失败"));
-                                    processNoteContent(note, index, noteDetail, imageUrls);
+                                    finalStep(note, index, noteDetail, imageUrls);
                                 }
 
                                 @Override
@@ -386,20 +428,34 @@ public class MainActivity extends AppCompatActivity {
                                     } else {
                                         runOnUiThread(() -> showToast("步骤2失败: 请求图片失败 (" + response.code() + ")"));
                                     }
-                                    processNoteContent(note, index, noteDetail, imageUrls);
+                                    finalStep(note, index, noteDetail, imageUrls);
                                 }
                             });
                 }
             } else {
-                processNoteContent(note, index, noteDetail, null);
+                finalStep(note, index, noteDetail, null);
             }
         }
 
     }
 
-    private synchronized void processNoteContent(String note, int index, NoteDetail noteDetail, Map<String, String> imageUrls) {
+    /**
+     * 处理笔记文本、下载图片、保存文件
+     */
+    private synchronized void finalStep(String note, int index, NoteDetail noteDetail, Map<String, String> imageUrls) {
         handledImages.merge(index, -1, Integer::sum);
         if (imageUrls != null && handledImages.get(index) != 0) return;
+
+        String folderId = noteDetail.data.entry.folderId;
+        DocumentFile targetFolder = newFolder;
+        DocumentFile targetImageFolder = imageFolder;
+
+        if (useFolders && folderDirs.containsKey(folderId)) {
+            targetFolder = folderDirs.get(folderId);
+            if (downloadImages) {
+                targetImageFolder = folderImageDirs.get(folderId);
+            }
+        }
 
         if (imageUrls != null) {
             if (outMode == OutMode.HTML) {
@@ -415,11 +471,12 @@ public class MainActivity extends AppCompatActivity {
                         "[图片]");
             }
 
-            if (downloadImages) {
+            if (downloadImages && targetImageFolder != null) {
                 for (String fileId : imageUrls.keySet()) {
                     String url = imageUrls.get(fileId);
                     if (url == null) continue;
 
+                    final DocumentFile finalImageFolder = targetImageFolder;
                     scheduledExecutorService.schedule(() -> {
                         Request request = new Request.Builder()
                                 .url(url)
@@ -437,7 +494,7 @@ public class MainActivity extends AppCompatActivity {
                                 ResponseBody body = response.body();
                                 if (body != null) {
                                     String contentType = response.header("Content-Type");
-                                    DocumentFile imageFile = imageFolder.createFile(
+                                    DocumentFile imageFile = finalImageFolder.createFile(
                                             contentType != null ? contentType : "image/jpeg",
                                             fileId);
                                     if (imageFile != null) {
@@ -491,9 +548,11 @@ public class MainActivity extends AppCompatActivity {
         }
 
         try {
-            if (newFolder != null) {
+            if (targetFolder != null) {
+                // 过滤文件名非法字符
+                title = title.replaceAll("[\\\\/:*?\"<>|]", "_");
                 String name = index + "." + title + fileExt;
-                DocumentFile newFile = newFolder.createFile("*/*", name);
+                DocumentFile newFile = targetFolder.createFile("*/*", name);
                 if (newFile != null) {
                     try (OutputStream outputStream = getContentResolver().openOutputStream(newFile.getUri())) {
                         if (outputStream != null) {
