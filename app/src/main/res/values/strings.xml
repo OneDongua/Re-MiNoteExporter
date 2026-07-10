@@ -1,3 +1,15 @@
 <resources>
     <string name="app_name">Re：小米笔记导出器</string>
+    <string name="export_html">导出为 HTML</string>
+    <string name="export_txt">导出为 TXT</string>
+    <string name="download_images">下载笔记中的图片</string>
+    <string name="use_folders">按文件夹分类</string>
+    <string name="about_app">关于软件</string>
+    <string name="confirm_settings_title">确认设置</string>
+    <string name="confirm_settings_message">这是您想要的设置吗？\n\n%1$s</string>
+    <string name="yes">是</string>
+    <string name="no">否</string>
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="settings">设置</string>
 </resources>

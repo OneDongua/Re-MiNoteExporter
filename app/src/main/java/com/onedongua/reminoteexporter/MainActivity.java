@@ -107,7 +107,7 @@ public class MainActivity extends AppCompatActivity {
 
         refreshButton.setOnClickListener(v -> refreshWebView());
         settingButton.setOnClickListener(v -> showSettingsPopup());
-        checkButton.setOnClickListener(v -> checkNotes());
+        checkButton.setOnClickListener(v -> check());
         selectButton.setOnClickListener(v -> openDirectory());
 
         // 线程池的生命周期管理
@@ -118,7 +118,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void showInfoDialog() {
         new AlertDialog.Builder(this)
-                .setTitle("关于软件")
+                .setTitle(R.string.about_app)
                 .setMessage("""
                         作者：一個冬瓜
                         1. 本软件仅供学习交流使用，请在 24 小时内删除本应用，一切因使用本软件产生的后果与原作者无关
@@ -135,7 +135,7 @@ public class MainActivity extends AppCompatActivity {
                         OkHttp: https://github.com/square/okhttp
                          Licence: Apache 2.0
                         """)
-                .setPositiveButton("确定", null)
+                .setPositiveButton(R.string.ok, null)
                 .show();
     }
 
@@ -197,8 +197,8 @@ public class MainActivity extends AppCompatActivity {
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setView(dialogView)
-                .setTitle("设置")
-                .setPositiveButton("确定", (dialog, which) -> {
+                .setTitle(R.string.settings)
+                .setPositiveButton(R.string.ok, (dialog, which) -> {
                     if (radioHtml.isChecked()) {
                         outMode = OutMode.HTML;
                     } else if (radioTxt.isChecked()) {
@@ -207,16 +207,32 @@ public class MainActivity extends AppCompatActivity {
                     downloadImages = checkBox.isChecked();
                     useFolders = checkFolder.isChecked();
                 })
-                .setNegativeButton("取消", (dialog, which) -> dialog.dismiss());
+                .setNegativeButton(R.string.cancel, (dialog, which) -> dialog.dismiss());
         AlertDialog dialog = builder.create();
         dialog.show();
     }
 
-    private void checkNotes() {
+    private void check() {
         if (uri == null) {
             showToast("请先选择导出目录");
             return;
         }
+
+        String settingsSummary =
+                "导出模式: " + (outMode == OutMode.HTML ? getString(R.string.export_html) : getString(R.string.export_txt)) + "\n" +
+                "下载图片: " + (downloadImages ? getString(R.string.yes) : getString(R.string.no)) + "\n" +
+                "按文件夹分类: " + (useFolders ? getString(R.string.yes) : getString(R.string.no)) + "\n\n" +
+                "点击确定则会开始导出";
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.confirm_settings_title)
+                .setMessage(getString(R.string.confirm_settings_message, settingsSummary))
+                .setPositiveButton(R.string.ok, (dialog, which) -> startExport())
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void startExport() {
         showToast("开始获取…");
         checkButton.setEnabled(false);
 
@@ -229,6 +245,7 @@ public class MainActivity extends AppCompatActivity {
         folder = DocumentFile.fromTreeUri(this, uri);
         if (folder == null || !folder.canWrite()) {
             showToast("导出目录初始化失败");
+            checkButton.setEnabled(true);
             return;
         }
 
@@ -242,6 +259,7 @@ public class MainActivity extends AppCompatActivity {
                 imageFolder = newFolder.createDirectory("图片");
             } else {
                 showToast("导出目录初始化失败");
+                checkButton.setEnabled(true);
                 return;
             }
         }
