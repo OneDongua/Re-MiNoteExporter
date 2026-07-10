@@ -21,8 +21,10 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.documentfile.provider.DocumentFile;
 
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.gson.Gson;
 import com.onedongua.reminoteexporter.databinding.ActivityMainBinding;
+import com.onedongua.reminoteexporter.databinding.DialogProgressBinding;
 import com.onedongua.reminoteexporter.databinding.DialogSettingsBinding;
 import com.onedongua.reminoteexporter.model.ExtraInfo;
 import com.onedongua.reminoteexporter.model.NoteDetail;
@@ -78,10 +80,15 @@ public class MainActivity extends AppCompatActivity {
     private final Map<String, DocumentFile> folderImageDirs = new HashMap<>();
     private Button checkButton;
     private Button selectButton;
+    private Button viewLastButton;
     private WebView webView;
     private String folderName;
     private final Map<Integer, Integer> handledImages = new ConcurrentHashMap<>();
     private int completedRequests = 0;
+    private int totalImages = 0;
+    private int completedImages = 0;
+    private BottomSheetDialog progressDialog;
+    private DialogProgressBinding progressBinding;
     private Toast currentToast;
 
     @Override
@@ -104,11 +111,17 @@ public class MainActivity extends AppCompatActivity {
         checkButton = binding.check;
         Button settingButton = binding.setting;
         selectButton = binding.select;
+        viewLastButton = binding.viewLastRecord;
 
         refreshButton.setOnClickListener(v -> refreshWebView());
         settingButton.setOnClickListener(v -> showSettingsPopup());
         checkButton.setOnClickListener(v -> check());
         selectButton.setOnClickListener(v -> openDirectory());
+        viewLastButton.setOnClickListener(v -> {
+            if (progressDialog != null) {
+                progressDialog.show();
+            }
+        });
 
         // 线程池的生命周期管理
         Runtime.getRuntime().addShutdownHook(new Thread(scheduledExecutorService::shutdown));
@@ -153,7 +166,7 @@ public class MainActivity extends AppCompatActivity {
                 uri = resultData.getData();
                 if (uri != null) {
                     showToast("你已选择: " + uri.getPath());
-                    selectButton.setText("重新选择");
+                    selectButton.setText("重新选择目录");
                 } else {
                     showToast("选择失败");
                 }
@@ -167,6 +180,57 @@ public class MainActivity extends AppCompatActivity {
         }
         currentToast = Toast.makeText(this, message, Toast.LENGTH_SHORT);
         currentToast.show();
+    }
+
+    private void showProgressDialog() {
+        progressDialog = new BottomSheetDialog(this);
+        progressBinding = DialogProgressBinding.inflate(getLayoutInflater());
+        progressDialog.setContentView(progressBinding.getRoot());
+        progressDialog.setCancelable(false);
+        progressDialog.setCanceledOnTouchOutside(false);
+
+        progressBinding.layoutImageProgress.setVisibility(downloadImages ? View.VISIBLE : View.GONE);
+
+        progressBinding.textLogToggle.setOnClickListener(v -> {
+            if (progressBinding.scrollLog.getVisibility() == View.VISIBLE) {
+                progressBinding.scrollLog.setVisibility(View.GONE);
+                progressBinding.textLogToggle.setText(R.string.view_log);
+            } else {
+                progressBinding.scrollLog.setVisibility(View.VISIBLE);
+                progressBinding.textLogToggle.setText(R.string.hide_log);
+            }
+        });
+
+        progressDialog.show();
+    }
+
+    private void updateLog(String message) {
+        runOnUiThread(() -> {
+            if (progressBinding != null) {
+                progressBinding.textLog.append(message + "\n");
+                progressBinding.scrollLog.post(() -> progressBinding.scrollLog.fullScroll(View.FOCUS_DOWN));
+            }
+        });
+    }
+
+    private synchronized void updateNoteProgress() {
+        runOnUiThread(() -> {
+            if (progressBinding != null) {
+                progressBinding.progressNote.setMax(noteUrls.size());
+                progressBinding.progressNote.setProgress(completedRequests);
+                progressBinding.textNoteProgress.setText(getString(R.string.note_progress, completedRequests, noteUrls.size()));
+            }
+        });
+    }
+
+    private synchronized void updateImageProgress() {
+        runOnUiThread(() -> {
+            if (progressBinding != null && downloadImages) {
+                progressBinding.progressImage.setMax(totalImages);
+                progressBinding.progressImage.setProgress(completedImages);
+                progressBinding.textImageProgress.setText(getString(R.string.image_progress, completedImages, totalImages));
+            }
+        });
     }
 
     private void refreshWebView() {
@@ -235,12 +299,19 @@ public class MainActivity extends AppCompatActivity {
     private void startExport() {
         showToast("开始获取…");
         checkButton.setEnabled(false);
+        viewLastButton.setVisibility(View.GONE);
 
         cookie = cookieManager.getCookie("https://i.mi.com/note/h5#/");
         noteUrls.clear(); // 清空上一次的记录
         folderNames.clear();
         folderDirs.clear();
         folderImageDirs.clear();
+        completedRequests = 0;
+        totalImages = 0;
+        completedImages = 0;
+
+        showProgressDialog();
+        updateLog("正在初始化导出目录...");
 
         folder = DocumentFile.fromTreeUri(this, uri);
         if (folder == null || !folder.canWrite()) {
@@ -282,6 +353,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
                 runOnUiThread(() -> showToast("步骤1失败: 请求失败"));
+                updateLog("步骤1失败: 请求列表失败");
             }
 
             @Override
@@ -293,9 +365,11 @@ public class MainActivity extends AppCompatActivity {
                         parseNotesJson(responseData);
                     } else {
                         runOnUiThread(() -> showToast("步骤1失败: 数据解析错误"));
+                        updateLog("步骤1失败: 数据解析错误");
                     }
                 } else {
                     runOnUiThread(() -> showToast("步骤1失败: 请求失败 (" + response.code() + ")"));
+                    updateLog("步骤1失败: 请求列表失败 (" + response.code() + ")");
                 }
             }
         });
@@ -318,10 +392,12 @@ public class MainActivity extends AppCompatActivity {
             if (entries.isEmpty()) {
                 runOnUiThread(() -> {
                     showToast("步骤1完成: 已读取到共" + noteUrls.size() + "条笔记列表");
+                    updateLog("步骤1完成: 已读取到共" + noteUrls.size() + "条笔记列表");
                     if (useFolders) {
                         createCategoryFolders();
                     }
                 });
+                updateNoteProgress();
                 fetchNoteDetails();
                 return;
             }
@@ -369,6 +445,7 @@ public class MainActivity extends AppCompatActivity {
 
             // 提交任务到线程池
             scheduledExecutorService.schedule(() -> {
+                updateLog("正在获取笔记详情 (" + (index + 1) + "/" + noteUrls.size() + ")");
                 Request request = new Request.Builder()
                         .url(url)
                         .addHeader("Cookie", cookie)
@@ -378,6 +455,7 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onFailure(@NonNull Call call, @NonNull IOException e) {
                         runOnUiThread(() -> showToast("步骤2失败: 请求失败"));
+                        updateLog("步骤2失败: 详情请求失败");
                         increaseCompletedRequests(); // 计数
                     }
 
@@ -391,6 +469,7 @@ public class MainActivity extends AppCompatActivity {
                             }
                         } else {
                             runOnUiThread(() -> showToast("步骤2失败: 请求失败 (" + response.code() + ")"));
+                            updateLog("步骤2失败: 详情请求失败 (" + response.code() + ")");
                         }
                         increaseCompletedRequests(); // 计数
                     }
@@ -415,8 +494,15 @@ public class MainActivity extends AppCompatActivity {
             Map<String, String> imageUrls = new HashMap<>();
 
             while (matcher.find()) {
-                imageUrls.put(matcher.group(1), null);
+                String fileId = matcher.group(1);
+                imageUrls.put(fileId, null);
                 handledImages.merge(index, 1, Integer::sum);
+                if (downloadImages) {
+                    synchronized (this) {
+                        totalImages++;
+                    }
+                    updateImageProgress();
+                }
             }
 
             if (!imageUrls.isEmpty()) {
@@ -464,6 +550,12 @@ public class MainActivity extends AppCompatActivity {
         handledImages.merge(index, -1, Integer::sum);
         if (imageUrls != null && handledImages.get(index) != 0) return;
 
+        Gson gson = new Gson();
+        String title = gson.fromJson(noteDetail.data.entry.extraInfo, ExtraInfo.class).title;
+        if (title == null || title.isEmpty()) {
+            title = "无标题";
+        }
+
         String folderId = noteDetail.data.entry.folderId;
         DocumentFile targetFolder = newFolder;
         DocumentFile targetImageFolder = imageFolder;
@@ -492,7 +584,10 @@ public class MainActivity extends AppCompatActivity {
             if (downloadImages && targetImageFolder != null) {
                 for (String fileId : imageUrls.keySet()) {
                     String url = imageUrls.get(fileId);
-                    if (url == null) continue;
+                    if (url == null) {
+                        increaseCompletedImages();
+                        continue;
+                    }
 
                     final DocumentFile finalImageFolder = targetImageFolder;
                     scheduledExecutorService.schedule(() -> {
@@ -505,6 +600,8 @@ public class MainActivity extends AppCompatActivity {
                             @Override
                             public void onFailure(@NonNull Call call, @NonNull IOException e) {
                                 runOnUiThread(() -> showToast("图片获取失败"));
+                                updateLog("图片获取失败: " + fileId);
+                                increaseCompletedImages();
                             }
 
                             @Override
@@ -528,14 +625,20 @@ public class MainActivity extends AppCompatActivity {
 
                                                 outputStream.flush();
                                                 runOnUiThread(() -> showToast("图片下载成功"));
+                                                updateLog("图片下载成功: " + fileId);
                                             }
                                         } catch (IOException e) {
                                             runOnUiThread(() -> showToast("图片保存失败"));
+                                            updateLog("图片保存失败: " + fileId);
                                         }
                                     } else {
                                         runOnUiThread(() -> showToast("图片文件创建失败"));
+                                        updateLog("图片文件创建失败: " + fileId);
                                     }
+                                } else {
+                                    updateLog("图片下载失败 (body empty): " + fileId);
                                 }
+                                increaseCompletedImages();
                             }
                         });
                     }, 500, TimeUnit.MILLISECONDS);
@@ -559,12 +662,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        Gson gson = new Gson();
-        String title = gson.fromJson(noteDetail.data.entry.extraInfo, ExtraInfo.class).title;
-        if (title == null || title.isEmpty()) {
-            title = "无标题";
-        }
-
         try {
             if (targetFolder != null) {
                 // 过滤文件名非法字符
@@ -577,6 +674,7 @@ public class MainActivity extends AppCompatActivity {
                             outputStream.write(note.getBytes());
                             outputStream.flush();
                             runOnUiThread(() -> showToast("已导出: " + name));
+                            updateLog("已导出: " + name);
                         }
                     } catch (IOException e) {
                         runOnUiThread(() -> showToast("文件写入失败"));
@@ -590,11 +688,23 @@ public class MainActivity extends AppCompatActivity {
 
     private synchronized void increaseCompletedRequests() {
         completedRequests++;
+        updateNoteProgress();
         if (completedRequests == noteUrls.size()) {
             runOnUiThread(() -> {
                 showToast("所有笔记已导出");
+                updateLog("所有笔记已导出");
                 checkButton.setEnabled(true);
+                viewLastButton.setVisibility(View.VISIBLE);
+                if (progressDialog != null) {
+                    progressDialog.setCancelable(true);
+                    progressDialog.setCanceledOnTouchOutside(true);
+                }
             });
         }
+    }
+
+    private synchronized void increaseCompletedImages() {
+        completedImages++;
+        updateImageProgress();
     }
 }

@@ -12,4 +12,10 @@
     <string name="ok">确定</string>
     <string name="cancel">取消</string>
     <string name="settings">设置</string>
+    <string name="export_progress">导出进度</string>
+    <string name="note_progress">笔记: %1$d/%2$d</string>
+    <string name="image_progress">图片: %1$d/%2$d</string>
+    <string name="view_log">查看日志</string>
+    <string name="hide_log">隐藏日志</string>
+    <string name="view_last_record">查看上次记录</string>
 </resources>
