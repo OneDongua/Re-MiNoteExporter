@@ -1,8 +1,10 @@
 <resources>
     <string name="app_name">Re：小米笔记导出器</string>
+    <string name="export_format">导出格式</string>
     <string name="export_xml">导出为 XML</string>
     <string name="export_txt">导出为 TXT</string>
     <string name="export_json">导出为 JSON</string>
+    <string name="export_md">导出为 Markdown</string>
     <string name="download_images">下载笔记中的图片</string>
     <string name="use_folders">按文件夹分类</string>
     <string name="about_app">关于软件</string>

@@ -6,6 +6,15 @@
     android:paddingHorizontal="16dp"
     android:paddingVertical="8dp">
 
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="4dp"
+        android:text="@string/export_format"
+        android:textColor="?attr/colorPrimary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
     <RadioGroup
         android:id="@+id/radioGroup"
         android:layout_width="match_parent"
@@ -13,10 +22,16 @@
         android:orientation="vertical">
 
         <RadioButton
-            android:id="@+id/radioHtml"
+            android:id="@+id/radioMd"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:checked="true"
+            android:text="@string/export_md" />
+
+        <RadioButton
+            android:id="@+id/radioHtml"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="@string/export_xml" />
 
         <RadioButton
@@ -30,7 +45,13 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/export_json" />
+
     </RadioGroup>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/colorOnSurface" />
 
     <CheckBox
         android:id="@+id/checkBox"

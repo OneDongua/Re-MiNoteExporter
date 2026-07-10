@@ -59,7 +59,7 @@ import okhttp3.ResponseBody;
 public class MainActivity extends AppCompatActivity {
 
     private enum OutMode {
-        XML, TXT, JSON
+        XML, TXT, JSON, MD
     }
 
     private final int REQUEST_CODE_DIRECTORY = 1;
@@ -71,7 +71,7 @@ public class MainActivity extends AppCompatActivity {
     private OkHttpClient client;
     private CookieManager cookieManager;
     private String cookie;
-    private OutMode outMode = OutMode.XML;
+    private OutMode outMode = OutMode.MD;
     private boolean downloadImages = false;
     private boolean useFolders = true;
     private final List<String> noteUrls = new ArrayList<>();
@@ -147,6 +147,8 @@ public class MainActivity extends AppCompatActivity {
                          Licence: Apache 2.0
                         OkHttp: https://github.com/square/okhttp
                          Licence: Apache 2.0
+                        jsoup: https://github.com/jhy/jsoup/
+                         Licence: MIT
                         """)
                 .setPositiveButton(R.string.ok, null)
                 .show();
@@ -245,6 +247,7 @@ public class MainActivity extends AppCompatActivity {
         RadioButton radioHtml = binding.radioHtml;
         RadioButton radioTxt = binding.radioTxt;
         RadioButton radioJson = binding.radioJson;
+        RadioButton radioMd = binding.radioMd;
         CheckBox checkBox = binding.checkBox;
         CheckBox checkFolder = binding.checkFolder;
         TextView textView = binding.textView;
@@ -256,6 +259,8 @@ public class MainActivity extends AppCompatActivity {
             radioTxt.setChecked(true);
         } else if (outMode == OutMode.JSON) {
             radioJson.setChecked(true);
+        } else if (outMode == OutMode.MD) {
+            radioMd.setChecked(true);
         }
         checkBox.setChecked(downloadImages);
         checkFolder.setChecked(useFolders);
@@ -272,6 +277,8 @@ public class MainActivity extends AppCompatActivity {
                         outMode = OutMode.TXT;
                     } else if (radioJson.isChecked()) {
                         outMode = OutMode.JSON;
+                    } else if (radioMd.isChecked()) {
+                        outMode = OutMode.MD;
                     }
                     downloadImages = checkBox.isChecked();
                     useFolders = checkFolder.isChecked();
@@ -292,6 +299,7 @@ public class MainActivity extends AppCompatActivity {
             case XML -> modeStr = getString(R.string.export_xml);
             case TXT -> modeStr = getString(R.string.export_txt);
             case JSON -> modeStr = getString(R.string.export_json);
+            case MD -> modeStr = getString(R.string.export_md);
             default -> modeStr = "未知";
         }
 
@@ -582,13 +590,18 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (imageUrls != null) {
-            if (outMode == OutMode.XML) {
+            if (outMode == OutMode.XML || outMode == OutMode.MD) {
                 for (String fileId : imageUrls.keySet()) {
                     String url = imageUrls.get(fileId);
                     if (url == null) continue;
 
-                    note = note.replaceAll("☺ " + fileId + "<0/></>",
-                            "<img src=\"" + url + "\">");
+                    if (outMode == OutMode.XML) {
+                        note = note.replaceAll("☺ " + fileId + "<0/></>",
+                                "<img src=\"" + url + "\">");
+                    } else {
+                        note = note.replaceAll("☺ " + fileId + "<0/></>",
+                                "![图片](" + url + ")");
+                    }
                 }
             } else if (outMode == OutMode.TXT) {
                 note = note.replaceAll("☺ .*?<0/></>",
@@ -674,6 +687,9 @@ public class MainActivity extends AppCompatActivity {
         } else if (outMode == OutMode.JSON) {
             fileExt = ".json";
             note = gson.toJson(noteDetail.data.entry);
+        } else if (outMode == OutMode.MD) {
+            fileExt = ".md";
+            note = XmlToMarkdown.convert(note);
         } else {
             runOnUiThread(() -> showToast("步骤2失败: 未知输出模式"));
             return;
