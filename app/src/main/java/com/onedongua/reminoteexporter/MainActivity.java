@@ -24,6 +24,10 @@ import androidx.documentfile.provider.DocumentFile;
 import com.google.gson.Gson;
 import com.onedongua.reminoteexporter.databinding.ActivityMainBinding;
 import com.onedongua.reminoteexporter.databinding.DialogSettingsBinding;
+import com.onedongua.reminoteexporter.model.ExtraInfo;
+import com.onedongua.reminoteexporter.model.NoteDetail;
+import com.onedongua.reminoteexporter.model.NoteEntry;
+import com.onedongua.reminoteexporter.model.NoteResponse;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -273,7 +277,7 @@ public class MainActivity extends AppCompatActivity {
         NoteResponse noteResponse = gson.fromJson(json, NoteResponse.class);
         if (noteResponse.code == 0) {
             NoteResponse.Data data = noteResponse.data;
-            List<NoteResponse.NoteEntry> entries = data.entries;
+            List<NoteEntry> entries = data.entries;
 
             // 如果没有更多数据，结束请求
             if (entries.isEmpty()) {
@@ -283,7 +287,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             // 保存笔记 ID 到列表中
-            for (NoteResponse.NoteEntry entry : entries) {
+            for (NoteEntry entry : entries) {
                 noteUrls.add("https://i.mi.com/note/note/" + entry.id);
             }
 
@@ -468,13 +472,13 @@ public class MainActivity extends AppCompatActivity {
 
         if (outMode == OutMode.HTML) {
             fileExt = ".html";
-            note = note.replaceAll("\n", "<br>");
+            note = note.replace("\n", "<br>");
         } else if (outMode == OutMode.TXT) {
             fileExt = ".txt";
             note = note.replaceAll("<.*?>", "");
-            note = note.replaceAll("&amp;", "&")
-                    .replaceAll("&lt;", "<")
-                    .replaceAll("&gt;", ">");
+            note = note.replace("&amp;", "&")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">");
         } else {
             runOnUiThread(() -> showToast("步骤2失败: 未知输出模式"));
             return;
@@ -515,37 +519,5 @@ public class MainActivity extends AppCompatActivity {
                 checkButton.setEnabled(true);
             });
         }
-    }
-
-    private static class NoteResponse {
-        int code;
-        Data data;
-
-        static class Data {
-            List<NoteEntry> entries;
-            String syncTag;
-        }
-
-        static class NoteEntry {
-            String id;
-        }
-    }
-
-    private static class NoteDetail {
-        Data data;
-
-        static class Data {
-            Entry entry;
-
-            static class Entry {
-                String content;
-                String extraInfo;
-            }
-
-        }
-    }
-
-    private static class ExtraInfo {
-        String title;
     }
 }
