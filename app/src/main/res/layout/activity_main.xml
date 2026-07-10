@@ -21,7 +21,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="4dp"
-        android:text="请先选择导出目录"
+        android:text="1.请先选择导出目录"
         app:layout_constraintBottom_toTopOf="@id/buttonLayout"
         app:layout_constraintEnd_toStartOf="@id/viewLastRecord"
         app:layout_constraintStart_toStartOf="parent" />
@@ -58,14 +58,14 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_margin="4dp"
-            android:text="进入笔记页面后点我" />
+            android:text="3.进入笔记页面后点我" />
 
         <Button
             android:id="@+id/setting"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_margin="4dp"
-            android:text="设置" />
+            android:text="2.设置" />
 
     </LinearLayout>
 
